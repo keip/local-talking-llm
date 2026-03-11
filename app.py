@@ -1,33 +1,28 @@
+import io
+import re
 import time
 import threading
 import numpy as np
 import whisper
 import sounddevice as sd
+import soundfile as sf
+import requests
 import argparse
-import os
 from queue import Queue
 from rich.console import Console
-# Updated imports for modern LangChain
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.chat_history import InMemoryChatMessageHistory
-from langchain_ollama import OllamaLLM
-from tts import TextToSpeechService
+from langchain_openai import ChatOpenAI
 
 console = Console()
 stt = whisper.load_model("base.en")
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description="Local Voice Assistant with ChatterBox TTS")
-parser.add_argument("--voice", type=str, help="Path to voice sample for cloning")
-parser.add_argument("--exaggeration", type=float, default=0.5, help="Emotion exaggeration (0.0-1.0)")
-parser.add_argument("--cfg-weight", type=float, default=0.5, help="CFG weight for pacing (0.0-1.0)")
-parser.add_argument("--model", type=str, default="gemma3", help="Ollama model to use")
-parser.add_argument("--save-voice", action="store_true", help="Save generated voice samples")
+parser.add_argument("--model", type=str, default="gemma3", help="LLM model to use")
+parser.add_argument("--tts-url", type=str, default="http://192.168.0.226:8000", help="TTS server URL")
 args = parser.parse_args()
-
-# Initialize TTS with ChatterBox
-tts = TextToSpeechService()
 
 # Modern prompt template using ChatPromptTemplate
 prompt_template = ChatPromptTemplate.from_messages([
@@ -36,8 +31,12 @@ prompt_template = ChatPromptTemplate.from_messages([
     ("human", "{input}")
 ])
 
-# Initialize LLM
-llm = OllamaLLM(model=args.model, base_url="http://localhost:11434")
+# Initialize LLM (LM Studio serves an OpenAI-compatible API)
+llm = ChatOpenAI(
+    model=args.model,
+    base_url="http://192.168.0.226:1234/v1",
+    api_key="lm-studio",
+)
 
 # Create the chain with modern LCEL syntax
 chain = prompt_template | llm
@@ -116,65 +115,43 @@ def get_llm_response(text: str) -> str:
         config={"session_id": session_id}
     )
 
-    # The response is now a string from the LLM, no need to remove "Assistant:" prefix
-    # since we're using a proper chat model setup
-    return response.strip()
+    # ChatOpenAI returns an AIMessage object, extract the text content
+    if hasattr(response, "content"):
+        text = response.content.strip()
+    else:
+        text = str(response).strip()
+
+    # Strip Qwen-style <think>...</think> reasoning tags
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    return text
+
+
+def synthesize_remote(text: str, tts_url: str) -> tuple[int, np.ndarray]:
+    """Sends text to the remote TTS server and returns audio."""
+    resp = requests.post(
+        f"{tts_url}/v1/audio/speech",
+        json={"text": text},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    buffer = io.BytesIO(resp.content)
+    audio, sr = sf.read(buffer)
+    return sr, audio
 
 
 def play_audio(sample_rate, audio_array):
-    """
-    Plays the given audio data using the sounddevice library.
-
-    Args:
-        sample_rate (int): The sample rate of the audio data.
-        audio_array (numpy.ndarray): The audio data to be played.
-
-    Returns:
-        None
-    """
+    """Plays the given audio data using the sounddevice library."""
     sd.play(audio_array, sample_rate)
     sd.wait()
-
-
-def analyze_emotion(text: str) -> float:
-    """
-    Simple emotion analysis to dynamically adjust exaggeration.
-    Returns a value between 0.3 and 0.9 based on text content.
-    """
-    # Keywords that suggest more emotion
-    emotional_keywords = ['amazing', 'terrible', 'love', 'hate', 'excited', 'sad', 'happy', 'angry', 'wonderful', 'awful', '!', '?!', '...']
-
-    emotion_score = 0.5  # Default neutral
-
-    text_lower = text.lower()
-    for keyword in emotional_keywords:
-        if keyword in text_lower:
-            emotion_score += 0.1
-
-    # Cap between 0.3 and 0.9
-    return min(0.9, max(0.3, emotion_score))
 
 
 if __name__ == "__main__":
     console.print("[cyan]🤖 Local Voice Assistant with ChatterBox TTS")
     console.print("[cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-    if args.voice:
-        console.print(f"[green]Using voice cloning from: {args.voice}")
-    else:
-        console.print("[yellow]Using default voice (no cloning)")
-
-    console.print(f"[blue]Emotion exaggeration: {args.exaggeration}")
-    console.print(f"[blue]CFG weight: {args.cfg_weight}")
     console.print(f"[blue]LLM model: {args.model}")
+    console.print(f"[blue]TTS server: {args.tts_url}")
     console.print("[cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     console.print("[cyan]Press Ctrl+C to exit.\n")
-
-    # Create voices directory if saving voices
-    if args.save_voice:
-        os.makedirs("voices", exist_ok=True)
-
-    response_count = 0
 
     try:
         while True:
@@ -204,31 +181,14 @@ if __name__ == "__main__":
                     text = transcribe(audio_np)
                 console.print(f"[yellow]You: {text}")
 
-                with console.status("Generating response...", spinner="dots"):
+                with console.status("Generating LLM response...", spinner="dots"):
                     response = get_llm_response(text)
-
-                    # Analyze emotion and adjust exaggeration dynamically
-                    dynamic_exaggeration = analyze_emotion(response)
-
-                    # Use lower cfg_weight for more expressive responses
-                    dynamic_cfg = args.cfg_weight * 0.8 if dynamic_exaggeration > 0.6 else args.cfg_weight
-
-                    sample_rate, audio_array = tts.long_form_synthesize(
-                        response,
-                        audio_prompt_path=args.voice,
-                        exaggeration=dynamic_exaggeration,
-                        cfg_weight=dynamic_cfg
-                    )
-
                 console.print(f"[cyan]Assistant: {response}")
-                console.print(f"[dim](Emotion: {dynamic_exaggeration:.2f}, CFG: {dynamic_cfg:.2f})[/dim]")
 
-                # Save voice sample if requested
-                if args.save_voice:
-                    response_count += 1
-                    filename = f"voices/response_{response_count:03d}.wav"
-                    tts.save_voice_sample(response, filename, args.voice)
-                    console.print(f"[dim]Voice saved to: {filename}[/dim]")
+                with console.status("Synthesizing speech (remote)...", spinner="dots"):
+                    sample_rate, audio_array = synthesize_remote(
+                        response, args.tts_url
+                    )
 
                 play_audio(sample_rate, audio_array)
             else:
