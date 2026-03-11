@@ -2,13 +2,14 @@ import nltk
 import warnings
 import numpy as np
 import soundfile as sf
+from concurrent.futures import ThreadPoolExecutor
 from mlx_audio.tts.utils import load_model
 
 warnings.filterwarnings("ignore")
 
 
 class TextToSpeechService:
-    def __init__(self, model_name: str = "mlx-community/Chatterbox-TTS-8bit"):
+    def __init__(self, model_name: str = "mlx-community/Chatterbox-TTS-4bit"):
         """
         Initializes the TextToSpeechService with mlx-audio-plus Chatterbox TTS.
 
@@ -55,7 +56,7 @@ class TextToSpeechService:
         """
         pieces = []
         sentences = nltk.sent_tokenize(text)
-        silence = np.zeros(int(0.25 * self.sample_rate))
+        silence = np.zeros(int(0.05 * self.sample_rate))
 
         for sent in sentences:
             sample_rate, audio_array = self.synthesize(
@@ -68,13 +69,18 @@ class TextToSpeechService:
     def stream_long_form_synthesize(self, text: str, audio_prompt_path: str | None = None):
         """
         Generator that yields (sample_rate, audio_array) per sentence for streaming playback.
+        Pre-synthesizes the next sentence in the background to reduce inter-sentence gaps.
         """
         sentences = nltk.sent_tokenize(text)
-        silence = np.zeros(int(0.25 * self.sample_rate))
+        silence = np.zeros(int(0.05 * self.sample_rate))
 
-        for sent in sentences:
-            _, audio_array = self.synthesize(sent, audio_prompt_path=audio_prompt_path)
-            yield self.sample_rate, np.concatenate([audio_array, silence])
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self.synthesize, sentences[0], audio_prompt_path)
+            for i in range(len(sentences)):
+                _, audio_array = future.result()
+                if i + 1 < len(sentences):
+                    future = executor.submit(self.synthesize, sentences[i + 1], audio_prompt_path)
+                yield self.sample_rate, np.concatenate([audio_array, silence])
 
     def save_voice_sample(self, text: str, output_path: str, audio_prompt_path: str | None = None):
         """

@@ -16,6 +16,11 @@ args = parser.parse_args()
 
 tts = TextToSpeechService()
 
+# Warmup: pre-compile MLX kernels so the first real request is fast
+print("Warming up TTS model...")
+list(tts.stream_long_form_synthesize("Hello."))
+print("TTS ready.")
+
 app = FastAPI(title="ChatterBox TTS Server")
 
 

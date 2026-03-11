@@ -33,7 +33,7 @@ args = parser.parse_args()
 
 # Modern prompt template using ChatPromptTemplate
 prompt_template = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful and friendly AI assistant with the voice of Morgan Freeman. You are polite, respectful, and aim to provide concise responses of less than 20 words."),
+    ("system", "You are a helpful and friendly AI assistant with the voice of Morgan Freeman. You are polite, respectful, and aim to provide concise responses of 1 to 2 sentences. Respond with plain text only — no emojis, no markdown, no special characters or symbols."),
     MessagesPlaceholder(variable_name="history"),
     ("human", "{input}")
 ])
@@ -130,6 +130,20 @@ def get_llm_response(text: str) -> str:
 
     # Strip Qwen-style <think>...</think> reasoning tags
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+    # Strip markdown formatting
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)  # bold
+    text = re.sub(r"\*(.+?)\*", r"\1", text)       # italic
+    text = re.sub(r"`(.+?)`", r"\1", text)         # inline code
+    text = re.sub(r"#+\s*", "", text)               # headings
+
+    # Remove emojis and other non-ASCII symbols
+    text = re.sub(r"[^\x00-\x7F]+", "", text)
+
+    # Collapse extra whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+
+
     return text
 
 
