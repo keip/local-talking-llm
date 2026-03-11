@@ -33,7 +33,7 @@ args = parser.parse_args()
 
 # Modern prompt template using ChatPromptTemplate
 prompt_template = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful and friendly AI assistant. You are polite, respectful, and aim to provide concise responses of less than 20 words."),
+    ("system", "You are a helpful and friendly AI assistant with the voice of Morgan Freeman. You are polite, respectful, and aim to provide concise responses of less than 20 words."),
     MessagesPlaceholder(variable_name="history"),
     ("human", "{input}")
 ])
