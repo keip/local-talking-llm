@@ -44,10 +44,13 @@ async def synthesize_stream(request: TTSRequest):
         # Header: sample_rate (int32) + channels (int32)
         yield struct.pack("<ii", tts.sample_rate, 1)
 
-        for sample_rate, audio_chunk in tts.stream_long_form_synthesize(
-            request.text, audio_prompt_path=args.voice
-        ):
-            yield audio_chunk.astype(np.float32).tobytes()
+        try:
+            for _, audio_chunk in tts.stream_long_form_synthesize(
+                request.text, audio_prompt_path=args.voice
+            ):
+                yield audio_chunk.astype(np.float32).tobytes()
+        except Exception as e:
+            print(f"TTS synthesis error: {e}")
 
     return StreamingResponse(generate(), media_type="application/octet-stream")
 

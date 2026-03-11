@@ -189,7 +189,10 @@ def stream_and_play_remote(text: str, tts_url: str):
         BLOCK_SIZE = 4096  # bytes
         remainder = b""
         while True:
-            data = raw.read(BLOCK_SIZE)
+            try:
+                data = raw.read(BLOCK_SIZE)
+            except Exception:
+                break
             if not data:
                 break
             data = remainder + data
