@@ -33,7 +33,10 @@
       "Bash(ls -la /Users/janczibula/www/local-talking-llm/*.py)",
       "Bash(grep -n 'def generate' /Users/janczibula/www/local-talking-llm/.venv/lib/python3.13/site-packages/mlx_audio/tts/models/cosyvoice2/*/model.py)",
       "Bash(ls -la /Users/janczibula/www/local-talking-llm/.venv/lib/python3.13/site-packages/mlx_audio/tts/models/*/config.json)",
-      "Bash(grep -r \"ref_audio\\\\|ref_text\" /Users/janczibula/www/local-talking-llm/.venv/lib/python3.13/site-packages/mlx_audio/tts/models/*/outetts.py)"
+      "Bash(grep -r \"ref_audio\\\\|ref_text\" /Users/janczibula/www/local-talking-llm/.venv/lib/python3.13/site-packages/mlx_audio/tts/models/*/outetts.py)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(.venv/bin/python -m pip install --upgrade mlx-audio-plus)",
+      "Bash(.venv/bin/uv pip:*)"
     ]
   }
 }
