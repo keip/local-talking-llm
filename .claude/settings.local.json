@@ -27,7 +27,9 @@
       "Read(//Users/janczibula/.local/bin/**)",
       "Read(//Users/janczibula/.cargo/bin/**)",
       "Read(//Users/janczibula/**)",
-      "Bash(/Users/janczibula/.local/bin/uv pip:*)"
+      "Bash(/Users/janczibula/.local/bin/uv pip:*)",
+      "Bash(grep -E \"\\\\.py$|\\\\.txt$|\\\\.toml$|\\\\.yaml$|\\\\.yml$\")",
+      "Bash(ls /Users/janczibula/www/local-talking-llm/*.py)"
     ]
   }
 }

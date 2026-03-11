@@ -1,6 +1,7 @@
 import io
 import re
 import time
+import struct
 import threading
 import numpy as np
 import whisper
@@ -151,6 +152,46 @@ def play_audio(sample_rate, audio_array):
     sd.wait()
 
 
+def stream_and_play_remote(text: str, tts_url: str):
+    """Streams audio from the TTS server and plays chunks as they arrive."""
+    resp = requests.post(
+        f"{tts_url}/v1/audio/speech/stream",
+        json={"text": text},
+        timeout=120,
+        stream=True,
+    )
+    resp.raise_for_status()
+
+    raw = resp.raw
+
+    # Read 8-byte header: sample_rate (int32) + channels (int32)
+    header = raw.read(8)
+    sample_rate, channels = struct.unpack("<ii", header)
+
+    stream = sd.OutputStream(samplerate=sample_rate, channels=channels, dtype="float32")
+    stream.start()
+
+    try:
+        BLOCK_SIZE = 4096  # bytes
+        remainder = b""
+        while True:
+            data = raw.read(BLOCK_SIZE)
+            if not data:
+                break
+            data = remainder + data
+            usable = len(data) - (len(data) % 4)
+            remainder = data[usable:]
+            if usable > 0:
+                audio = np.frombuffer(data[:usable], dtype=np.float32)
+                stream.write(audio.reshape(-1, channels))
+
+        # Drain remaining buffered audio
+        time.sleep(stream.latency + 0.1)
+    finally:
+        stream.stop()
+        stream.close()
+
+
 def run_manual_mode(args):
     """Original press-Enter-to-record interaction loop."""
     while True:
@@ -184,12 +225,8 @@ def run_manual_mode(args):
                 response = get_llm_response(text)
             console.print(f"[cyan]Assistant: {response}")
 
-            with console.status("Synthesizing speech (remote)...", spinner="dots"):
-                sample_rate, audio_array = synthesize_remote(
-                    response, args.tts_url
-                )
-
-            play_audio(sample_rate, audio_array)
+            console.print("[green]Speaking...")
+            stream_and_play_remote(response, args.tts_url)
         else:
             console.print(
                 "[red]No audio recorded. Please ensure your microphone is working."
@@ -347,12 +384,8 @@ def run_always_on_mode(args):
                     response = get_llm_response(text)
                 console.print(f"[cyan]Morgan: {response}")
 
-                with console.status("Synthesizing speech...", spinner="dots"):
-                    sample_rate, audio_array = synthesize_remote(
-                        response, args.tts_url
-                    )
-
-                play_audio(sample_rate, audio_array)
+                console.print("[green]Speaking...")
+                stream_and_play_remote(response, args.tts_url)
 
                 # Drain audio queue to discard self-echo from TTS playback
                 _drain_queue(audio_queue)

@@ -1,8 +1,10 @@
 import io
+import struct
 import argparse
+import numpy as np
 import soundfile as sf
 from fastapi import FastAPI
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from tts import TextToSpeechService
 
@@ -29,6 +31,20 @@ async def synthesize(request: TTSRequest):
     buffer = io.BytesIO()
     sf.write(buffer, audio_array, sample_rate, format="WAV")
     return Response(content=buffer.getvalue(), media_type="audio/wav")
+
+
+@app.post("/v1/audio/speech/stream")
+async def synthesize_stream(request: TTSRequest):
+    def generate():
+        # Header: sample_rate (int32) + channels (int32)
+        yield struct.pack("<ii", tts.sample_rate, 1)
+
+        for sample_rate, audio_chunk in tts.stream_long_form_synthesize(
+            request.text, audio_prompt_path=args.voice
+        ):
+            yield audio_chunk.astype(np.float32).tobytes()
+
+    return StreamingResponse(generate(), media_type="application/octet-stream")
 
 
 @app.get("/health")

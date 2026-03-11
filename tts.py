@@ -65,6 +65,17 @@ class TextToSpeechService:
 
         return self.sample_rate, np.concatenate(pieces)
 
+    def stream_long_form_synthesize(self, text: str, audio_prompt_path: str | None = None):
+        """
+        Generator that yields (sample_rate, audio_array) per sentence for streaming playback.
+        """
+        sentences = nltk.sent_tokenize(text)
+        silence = np.zeros(int(0.25 * self.sample_rate))
+
+        for sent in sentences:
+            _, audio_array = self.synthesize(sent, audio_prompt_path=audio_prompt_path)
+            yield self.sample_rate, np.concatenate([audio_array, silence])
+
     def save_voice_sample(self, text: str, output_path: str, audio_prompt_path: str | None = None):
         """
         Saves a voice sample to file.
