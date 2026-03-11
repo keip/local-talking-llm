@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 
 
 class TextToSpeechService:
-    def __init__(self, model_name: str = "mlx-community/Chatterbox-TTS-4bit"):
+    def __init__(self, model_name: str = "mlx-community/Chatterbox-TTS-8bit"):
         """
         Initializes the TextToSpeechService with mlx-audio-plus Chatterbox TTS.
 
