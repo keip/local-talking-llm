@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/janczibula/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/bin/**)",
+      "Bash(/Users/janczibula/www/local-talking-llm/.venv/bin/python -c \"import numpy; print\\(numpy.__version__\\)\")",
+      "Bash(/Users/janczibula/www/local-talking-llm/.venv/bin/python --version)",
+      "Bash(.venv/bin/python -c \"import torch; print\\(''''torch:'''', torch.__version__\\)\")",
+      "Bash(.venv/bin/pip show:*)",
+      "Bash(uv pip:*)",
+      "Bash(.venv/bin/python -c \"import importlib.metadata; print\\(''torchaudio:'', importlib.metadata.version\\(''torchaudio''\\)\\); print\\(''torch:'', importlib.metadata.version\\(''torch''\\)\\)\")",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:blog.johnys.io)",
+      "Bash(grep -r mlx /Users/janczibula/www/local-talking-llm --include=*.py)",
+      "Bash(uv sync:*)",
+      "Bash(~/.local/bin/uv sync:*)",
+      "Bash(.venv/bin/python -c \"import nltk; nltk.download\\(''punkt_tab''\\)\")",
+      "Bash(.venv/bin/python -c \"import fastapi, uvicorn, requests, soundfile; print\\(''All imports OK''\\)\")",
+      "Bash(grep -E \"\\\\.\\(py|txt|toml|md|yaml|yml\\)$\")",
+      "Bash(pip install:*)",
+      "Bash(python -c \"import torch; print\\(torch.__version__\\)\")",
+      "Bash(/Users/janczibula/www/local-talking-llm/.venv/bin/python -c \"import torch; print\\(torch.__version__\\)\")",
+      "Bash(/Users/janczibula/www/local-talking-llm/.venv/bin/python -c \":*)",
+      "Bash(rm -f /Users/janczibula/.cache/torch/hub/master.zip)",
+      "Bash(/Users/janczibula/www/local-talking-llm/.venv/bin/pip install:*)",
+      "Bash(/Users/janczibula/www/local-talking-llm/.venv/bin/python -m pip install torchaudio)",
+      "Read(//Users/janczibula/.local/bin/**)",
+      "Read(//Users/janczibula/.cargo/bin/**)",
+      "Read(//Users/janczibula/**)",
+      "Bash(/Users/janczibula/.local/bin/uv pip:*)"
+    ]
+  }
+}
