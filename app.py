@@ -10,6 +10,7 @@ import soundfile as sf
 import requests
 import argparse
 from queue import Queue
+import web_ui
 from rich.console import Console
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
@@ -29,11 +30,13 @@ parser.add_argument(
 )
 parser.add_argument("--wake-phrase", type=str, default="hey morgan", help="Wake phrase to activate the assistant")
 parser.add_argument("--silence-timeout", type=float, default=1.5, help="Seconds of silence for end-of-speech")
+parser.add_argument("--idle-timeout", type=float, default=8.0, help="Seconds of silence after response before returning to wake phrase mode")
+parser.add_argument("--ui-port", type=int, default=8080, help="Port for the web UI server")
 args = parser.parse_args()
 
 # Modern prompt template using ChatPromptTemplate
 prompt_template = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful and friendly AI assistant with the voice of Morgan Freeman. You are polite, respectful, and aim to provide concise responses of 1 to 2 sentences. Respond with plain text only — no emojis, no markdown, no special characters or symbols."),
+    ("system", "You are a pragmatic AI assistant with the voice of Morgan Freeman. You are polite, respectful, and aim to provide concise responses of 1 to 2 sentences. Respond with plain text only — no emojis, no markdown, no special characters or symbols."),
     MessagesPlaceholder(variable_name="history"),
     ("human", "{input}")
 ])
@@ -211,11 +214,13 @@ def stream_and_play_remote(text: str, tts_url: str):
 
 def run_manual_mode(args):
     """Original press-Enter-to-record interaction loop."""
+    web_ui.emit({"type": "state", "state": "listening"})
     while True:
         console.input(
             "🎤 Press Enter to start recording, then press Enter again to stop."
         )
 
+        web_ui.emit({"type": "state", "state": "recording"})
         data_queue = Queue()  # type: ignore[var-annotated]
         stop_event = threading.Event()
         recording_thread = threading.Thread(
@@ -234,20 +239,26 @@ def run_manual_mode(args):
         )
 
         if audio_np.size > 0:
+            web_ui.emit({"type": "state", "state": "processing"})
             with console.status("Transcribing...", spinner="dots"):
                 text = transcribe(audio_np)
             console.print(f"[yellow]You: {text}")
+            web_ui.emit({"type": "message", "role": "user", "text": text})
 
             with console.status("Generating LLM response...", spinner="dots"):
                 response = get_llm_response(text)
             console.print(f"[cyan]Assistant: {response}")
+            web_ui.emit({"type": "message", "role": "assistant", "text": response})
 
             console.print("[green]Speaking...")
+            web_ui.emit({"type": "state", "state": "speaking"})
             stream_and_play_remote(response, args.tts_url)
+            web_ui.emit({"type": "state", "state": "listening"})
         else:
             console.print(
                 "[red]No audio recorded. Please ensure your microphone is working."
             )
+            web_ui.emit({"type": "state", "state": "listening"})
 
 
 def _drain_queue(q):
@@ -294,6 +305,7 @@ def run_always_on_mode(args):
         blocksize=CHUNK_SIZE, callback=audio_callback,
     ):
         console.print(f"[green]Listening for '{args.wake_phrase}'...")
+        web_ui.emit({"type": "state", "state": "listening"})
 
         while True:
             raw_data = audio_queue.get()
@@ -328,8 +340,10 @@ def run_always_on_mode(args):
 
                     if detected:
                         console.print(f"[cyan]Wake phrase detected! (\"{text}\")")
+                        web_ui.emit({"type": "state", "state": "wake_detected"})
                         beep_start()
                         state = "RECORDING"
+                        web_ui.emit({"type": "state", "state": "recording"})
                         command_audio = []
                         vad.reset()
                         vad.silence_timeout = args.silence_timeout
@@ -338,6 +352,7 @@ def run_always_on_mode(args):
                     else:
                         # Not a wake phrase, go back to listening
                         state = "LISTENING"
+                        web_ui.emit({"type": "state", "state": "listening"})
                         vad.reset()
                         vad.silence_timeout = WAKE_SILENCE
                     wake_audio = []
@@ -356,6 +371,28 @@ def run_always_on_mode(args):
                 ):
                     console.print("[yellow]No command detected, resuming listening.")
                     state = "LISTENING"
+                    web_ui.emit({"type": "state", "state": "listening"})
+                    vad.reset()
+                    vad.silence_timeout = WAKE_SILENCE
+                    console.print(f"[green]Listening for '{args.wake_phrase}'...")
+                    continue
+                else:
+                    continue
+
+            elif state == "CONVERSING":
+                command_audio.append(chunk_np.copy())
+                result = vad.process_chunk(chunk_np)
+
+                if result["speech_ended"]:
+                    beep_end()
+                    state = "PROCESSING"
+                elif (
+                    not result["speech_detected_ever"]
+                    and result["silence_duration"] > args.idle_timeout
+                ):
+                    console.print("[yellow]Idle timeout, returning to wake phrase mode.")
+                    state = "LISTENING"
+                    web_ui.emit({"type": "state", "state": "listening"})
                     vad.reset()
                     vad.silence_timeout = WAKE_SILENCE
                     console.print(f"[green]Listening for '{args.wake_phrase}'...")
@@ -364,12 +401,14 @@ def run_always_on_mode(args):
                     continue
 
             if state == "PROCESSING":
+                web_ui.emit({"type": "state", "state": "processing"})
                 audio_np = (
                     np.concatenate(command_audio).astype(np.float32) / 32768.0
                 )
 
                 if audio_np.size == 0:
                     state = "LISTENING"
+                    web_ui.emit({"type": "state", "state": "listening"})
                     vad.reset()
                     vad.silence_timeout = WAKE_SILENCE
                     console.print(f"[green]Listening for '{args.wake_phrase}'...")
@@ -378,11 +417,14 @@ def run_always_on_mode(args):
                 with console.status("Transcribing...", spinner="dots"):
                     text = transcribe(audio_np)
                 console.print(f"[yellow]You: {text}")
+                web_ui.emit({"type": "message", "role": "user", "text": text})
 
                 # Check for stop phrase
                 if text.strip().lower().rstrip(".!") in ("thank you", "thanks"):
                     console.print("[cyan]Morgan: You're welcome!")
+                    web_ui.emit({"type": "message", "role": "assistant", "text": "You're welcome!"})
                     state = "LISTENING"
+                    web_ui.emit({"type": "state", "state": "listening"})
                     vad.reset()
                     vad.silence_timeout = WAKE_SILENCE
                     console.print(f"[green]Listening for '{args.wake_phrase}'...")
@@ -392,6 +434,7 @@ def run_always_on_mode(args):
                 if not text or text.startswith("("):
                     console.print("[yellow]No speech recognized, resuming listening.")
                     state = "LISTENING"
+                    web_ui.emit({"type": "state", "state": "listening"})
                     vad.reset()
                     vad.silence_timeout = WAKE_SILENCE
                     console.print(f"[green]Listening for '{args.wake_phrase}'...")
@@ -400,16 +443,21 @@ def run_always_on_mode(args):
                 with console.status("Generating LLM response...", spinner="dots"):
                     response = get_llm_response(text)
                 console.print(f"[cyan]Morgan: {response}")
+                web_ui.emit({"type": "message", "role": "assistant", "text": response})
 
                 console.print("[green]Speaking...")
+                web_ui.emit({"type": "state", "state": "speaking"})
                 stream_and_play_remote(response, args.tts_url)
 
                 # Drain audio queue to discard self-echo from TTS playback
                 _drain_queue(audio_queue)
-                state = "LISTENING"
+                beep_start()
+                state = "CONVERSING"
+                web_ui.emit({"type": "state", "state": "recording"})
+                command_audio = []
                 vad.reset()
-                vad.silence_timeout = WAKE_SILENCE
-                console.print(f"[green]Listening for '{args.wake_phrase}'...")
+                vad.silence_timeout = args.silence_timeout
+                console.print("[green]Continuing conversation — speak or wait to return to wake phrase mode...")
 
 
 if __name__ == "__main__":
@@ -418,8 +466,12 @@ if __name__ == "__main__":
     console.print(f"[blue]Mode: {args.mode}")
     console.print(f"[blue]LLM model: {args.model}")
     console.print(f"[blue]TTS server: {args.tts_url}")
+    console.print(f"[blue]Web UI: http://localhost:{args.ui_port}")
     console.print("[cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     console.print("[cyan]Press Ctrl+C to exit.\n")
+
+    web_ui.start_server(port=args.ui_port)
+    web_ui.emit({"type": "info", "model": args.model, "mode": args.mode, "tts_url": args.tts_url})
 
     try:
         if args.mode == "always-on":
