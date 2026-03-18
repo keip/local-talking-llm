@@ -1,4 +1,4 @@
-PHONY: hello
+.PHONY: hello lint run tts-server
 
 RED=\033[0;31m
 GREEN=\033[0;32m
@@ -15,6 +15,11 @@ hello:
 	@echo "${GREEN}Shell:${RESET}\t\t\t${YELLOW}$$(echo $$SHELL)${RESET}"
 	@echo "${GREEN}Terminal:${RESET}\t\t${YELLOW}$$(echo $$TERM)${RESET}"
 
+run:
+	local-talking-llm
+
+tts-server:
+	tts-server --voice voices/morgan_freeman.wav
 
 lint:
 	@echo "Running linter..."

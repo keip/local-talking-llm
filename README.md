@@ -87,24 +87,24 @@ The system requires two terminals — one for the TTS server and one for the mai
 ### 1. Start the TTS server
 
 ```bash
-# Basic
-python tts_server.py
-
 # With voice cloning (provide a 10-30s clear audio sample)
-python tts_server.py --voice morgan_freeman.wav
+tts-server --voice voices/morgan_freeman.wav
+
+# Or via make
+make tts-server
 ```
 
 ### 2. Start the main app
 
 ```bash
 # Manual mode — press Enter to start/stop recording
-python app.py
+local-talking-llm
 
 # Always-on mode — uses wake word detection
-python app.py --mode always-on
+local-talking-llm --mode always-on
 
 # Custom wake phrase
-python app.py --mode always-on --wake-phrase "hey jarvis"
+local-talking-llm --mode always-on --wake-phrase "hey jarvis"
 ```
 
 ### 3. Open the Web UI
@@ -113,7 +113,7 @@ Navigate to `http://localhost:8080` for a real-time dashboard showing conversati
 
 ## Command-Line Options
 
-### app.py
+### local-talking-llm
 
 | Option | Default | Description |
 |---|---|---|
@@ -125,11 +125,13 @@ Navigate to `http://localhost:8080` for a real-time dashboard showing conversati
 | `--idle-timeout` | `8.0` | Seconds of idle to return to wake mode |
 | `--ui-port` | `8080` | Web UI port |
 
-### tts_server.py
+### tts-server
 
 | Option | Default | Description |
 |---|---|---|
-| `--voice` | `None` | Path to reference audio for voice cloning |
+| `--voice` | (required) | Path to reference audio for voice cloning |
+| `--host` | `0.0.0.0` | Server host |
+| `--port` | `8000` | Server port |
 
 ## Interaction Modes
 
@@ -151,16 +153,20 @@ Navigate to `http://localhost:8080` for a real-time dashboard showing conversati
 ## Project Structure
 
 ```
-├── app.py              # Main voice assistant orchestrator
-├── tts_server.py       # FastAPI TTS server (Chatterbox)
-├── tts.py              # TTS model wrapper
-├── vad.py              # Voice activity detection (Silero VAD)
-├── wake_word.py        # Wake phrase detection via Whisper
-├── web_ui.py           # Real-time web dashboard (FastAPI + WebSocket)
-├── beep.py             # Audio feedback tones
-├── morgan_freeman.wav  # Example voice cloning reference
-├── pyproject.toml      # Project dependencies
-└── Makefile            # Dev targets
+├── voices/
+│   └── morgan_freeman.wav      # Example voice cloning reference
+├── src/
+│   └── local_talking_llm/
+│       ├── cli.py              # CLI entry point (argparse + main)
+│       ├── assistant.py        # VoiceAssistant orchestrator class
+│       ├── audio.py            # Audio recording, playback, and beep tones
+│       ├── tts.py              # Chatterbox TTS model wrapper
+│       ├── tts_server.py       # FastAPI TTS server
+│       ├── vad.py              # Voice activity detection (Silero VAD)
+│       ├── wake_word.py        # Wake phrase detection via Whisper
+│       └── web_ui.py           # Real-time web dashboard (WebSocket)
+├── pyproject.toml              # Project config and dependencies
+└── Makefile                    # Dev targets
 ```
 
 ## Tips
@@ -176,7 +182,7 @@ Navigate to `http://localhost:8080` for a real-time dashboard showing conversati
 
 **Microphone not detected** — Check system audio permissions and ensure `sounddevice` can see your input device (`python -c "import sounddevice; print(sounddevice.query_devices())"`)
 
-**LLM not responding** — Verify Ollama/LM Studio is running and the model is loaded. Check the `base_url` in `app.py` matches your setup.
+**LLM not responding** — Verify Ollama/LM Studio is running and the model is loaded. Check the `base_url` in `src/local_talking_llm/assistant.py` matches your setup.
 
 **Slow TTS** — The first generation is slow due to model loading and MLX kernel compilation. Subsequent calls are much faster.
 
