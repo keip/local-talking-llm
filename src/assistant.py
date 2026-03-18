@@ -16,13 +16,13 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_openai import ChatOpenAI
 
-from . import web_ui
-from .audio import record_audio, beep_start, beep_end
-from .wake_word import WakeWordDetector
-from .vad import VoiceActivityDetector
-from .tools import ToolRegistry, ToolLogger
-from .tools.web_search import WebSearchTool
-from .tools.system_command import SystemCommandTool
+import web_ui
+from audio import record_audio, beep_start, beep_end
+from wake_word import WakeWordDetector
+from vad import VoiceActivityDetector
+from tools import ToolRegistry, ToolLogger
+from tools.web_search import WebSearchTool
+from tools.system_command import SystemCommandTool
 
 
 class VoiceAssistant:

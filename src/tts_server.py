@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
-from .tts import TextToSpeechService
+from tts import TextToSpeechService
 
 app = FastAPI(title="ChatterBox TTS Server")
 

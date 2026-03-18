@@ -2,8 +2,8 @@ import argparse
 
 from rich.console import Console
 
-from . import web_ui
-from .assistant import VoiceAssistant
+import web_ui
+from assistant import VoiceAssistant
 
 
 def main():

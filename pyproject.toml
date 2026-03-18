@@ -23,16 +23,13 @@ dependencies = [
 ]
 
 [project.scripts]
-local-talking-llm = "local_talking_llm.cli:main"
-tts-server = "local_talking_llm.tts_server:main"
+local-talking-llm = "cli:main"
+tts-server = "tts_server:main"
 
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
 ]
-
-[tool.uv.sources]
-local-talking-llm = { workspace = true }
 
 [tool.uv.extra-build-dependencies]
 openai-whisper = ["setuptools"]
@@ -43,4 +40,5 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/local_talking_llm"]
+include = ["src/"]
+sources = ["src"]
