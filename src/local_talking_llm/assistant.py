@@ -20,6 +20,9 @@ from . import web_ui
 from .audio import record_audio, beep_start, beep_end
 from .wake_word import WakeWordDetector
 from .vad import VoiceActivityDetector
+from .tools import ToolRegistry, ToolLogger
+from .tools.web_search import WebSearchTool
+from .tools.system_command import SystemCommandTool
 
 
 class VoiceAssistant:
@@ -32,9 +35,30 @@ class VoiceAssistant:
         # Load Whisper STT model
         self.stt = whisper.load_model("base.en")
 
+        # Set up tool registry
+        self.tool_registry = ToolRegistry()
+        self.tool_registry.register(WebSearchTool())
+        tools_config = getattr(args, "tools_config", "tools.yaml")
+        self.tool_registry.register(SystemCommandTool(tools_config))
+        self.max_tool_depth = getattr(args, "max_tool_depth", 5)
+
+        tool_log_path = getattr(args, "tool_log", "tool_calls.log")
+        self.tool_logger = ToolLogger(tool_log_path)
+
         # Build LLM chain
+        tool_prompt_section = self.tool_registry.build_system_prompt_section()
+        system_message = (
+            "You are a pragmatic AI assistant with the voice of Morgan Freeman. "
+            "You are polite, respectful, and aim to provide concise responses of "
+            "1 to 2 sentences. Respond with plain text only — no emojis, no markdown, "
+            "no special characters or symbols."
+        )
+        if tool_prompt_section:
+            # Escape curly braces so LangChain doesn't treat them as template variables
+            system_message += "\n\n" + tool_prompt_section.replace("{", "{{").replace("}", "}}")
+
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", "You are a pragmatic AI assistant with the voice of Morgan Freeman. You are polite, respectful, and aim to provide concise responses of 1 to 2 sentences. Respond with plain text only — no emojis, no markdown, no special characters or symbols."),
+            ("system", system_message),
             MessagesPlaceholder(variable_name="history"),
             ("human", "{input}")
         ])
@@ -66,22 +90,13 @@ class VoiceAssistant:
         text = result["text"].strip()
         return text
 
-    def get_llm_response(self, text: str) -> str:
-        """Generates a response using the language model."""
-        session_id = "voice_assistant_session"
-
-        response = self.chain_with_history.invoke(
-            {"input": text},
-            config={"session_id": session_id}
-        )
-
-        if hasattr(response, "content"):
-            text = response.content.strip()
-        else:
-            text = str(response).strip()
-
+    def _clean_response(self, text: str) -> str:
+        """Strip reasoning tags, markdown, emojis, and extra whitespace."""
         # Strip Qwen-style <think>...</think> reasoning tags
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+        # Strip any remaining tool call blocks
+        text = self.tool_registry.strip_tool_calls(text)
 
         # Strip markdown formatting
         text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)  # bold
@@ -96,6 +111,55 @@ class VoiceAssistant:
         text = re.sub(r"\s+", " ", text).strip()
 
         return text
+
+    def get_llm_response(self, text: str) -> str:
+        """Generates a response, executing tool calls in a loop if needed."""
+        session_id = "voice_assistant_session"
+        current_input = text
+
+        for _iteration in range(self.max_tool_depth):
+            response = self.chain_with_history.invoke(
+                {"input": current_input},
+                config={"session_id": session_id}
+            )
+
+            if hasattr(response, "content"):
+                response_text = response.content.strip()
+            else:
+                response_text = str(response).strip()
+
+            # Check for a tool call
+            parsed = self.tool_registry.parse_tool_call(response_text)
+            if parsed is None:
+                return self._clean_response(response_text)
+
+            tool_name, tool_args = parsed
+            tool = self.tool_registry.get(tool_name)
+
+            if tool is None:
+                # Unknown tool — feed error back and let LLM retry
+                current_input = f"[TOOL_RESULT]Error: unknown tool '{tool_name}'[/TOOL_RESULT]"
+                continue
+
+            # Execute the tool
+            web_ui.emit({"type": "tool_call", "tool": tool_name, "args": tool_args})
+            start = time.monotonic()
+            success = True
+            try:
+                result = tool.execute(**tool_args)
+            except Exception as exc:
+                result = f"Tool error: {exc}"
+                success = False
+            duration_ms = int((time.monotonic() - start) * 1000)
+
+            self.tool_logger.log(tool_name, tool_args, result, duration_ms, success)
+            web_ui.emit({"type": "tool_result", "tool": tool_name, "summary": result[:200]})
+
+            # Feed the result back to the LLM
+            current_input = f"[TOOL_RESULT]{result}[/TOOL_RESULT]"
+
+        # Max depth reached — clean whatever we have
+        return self._clean_response(response_text)
 
     def synthesize_remote(self, text: str) -> tuple[int, np.ndarray]:
         """Sends text to the remote TTS server and returns audio."""

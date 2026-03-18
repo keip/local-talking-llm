@@ -18,6 +18,9 @@ def main():
     parser.add_argument("--silence-timeout", type=float, default=1.5, help="Seconds of silence for end-of-speech")
     parser.add_argument("--idle-timeout", type=float, default=8.0, help="Seconds of silence after response before returning to wake phrase mode")
     parser.add_argument("--ui-port", type=int, default=8080, help="Port for the web UI server")
+    parser.add_argument("--tools-config", type=str, default="tools.yaml", help="Path to tools allowlist YAML config")
+    parser.add_argument("--tool-log", type=str, default="tool_calls.log", help="Path to tool call log file")
+    parser.add_argument("--max-tool-depth", type=int, default=5, help="Maximum number of chained tool calls per response")
     args = parser.parse_args()
 
     console = Console()

@@ -135,6 +135,49 @@ HTML = """<!DOCTYPE html>
     0%, 100% { transform: translateY(0); opacity: 0.5; }
     50% { transform: translateY(-6px); opacity: 1; }
   }
+  .tool-indicator {
+    max-width: 75%;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #1c1f2e;
+    border: 1px solid #3b3f5c;
+    color: #a78bfa;
+    align-self: flex-start;
+    animation: fadeIn 0.2s ease;
+  }
+  .tool-indicator .tool-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    margin-bottom: 2px;
+  }
+  .tool-history {
+    border-top: 1px solid #1e2235;
+    background: #0d0f15;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 10px 24px;
+    font-size: 12px;
+    color: #64748b;
+  }
+  .tool-history summary {
+    cursor: pointer;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+  .tool-history .entry {
+    padding: 4px 0;
+    border-bottom: 1px solid #1a1d27;
+  }
+  .tool-history .entry .name { color: #a78bfa; font-weight: 500; }
+  .tool-history .entry .summary { color: #64748b; }
 </style>
 </head>
 <body>
@@ -153,11 +196,18 @@ HTML = """<!DOCTYPE html>
 <div class="conversation" id="conversation">
   <div class="empty-state" id="empty-state">Waiting for conversation...</div>
 </div>
+<div class="tool-history">
+  <details>
+    <summary>Tool History</summary>
+    <div id="tool-history-list"></div>
+  </details>
+</div>
 <script>
   const dot = document.getElementById('status-dot');
   const label = document.getElementById('status-label');
   const conv = document.getElementById('conversation');
   const empty = document.getElementById('empty-state');
+  const toolHistoryList = document.getElementById('tool-history-list');
 
   const STATE_LABELS = {
     listening: 'Listening for wake phrase',
@@ -168,6 +218,7 @@ HTML = """<!DOCTYPE html>
   };
 
   let thinkingEl = null;
+  let toolIndicatorEl = null;
 
   function setStatus(state) {
     dot.className = 'status-dot ' + state;
@@ -211,6 +262,35 @@ HTML = """<!DOCTYPE html>
     return div;
   }
 
+  function showToolIndicator(toolName) {
+    removeToolIndicator();
+    empty.style.display = 'none';
+    const div = document.createElement('div');
+    div.className = 'tool-indicator';
+    const lbl = document.createElement('div');
+    lbl.className = 'tool-label';
+    lbl.textContent = 'Tool';
+    div.appendChild(lbl);
+    const body = document.createElement('div');
+    body.textContent = 'Using ' + toolName + '...';
+    div.appendChild(body);
+    conv.appendChild(div);
+    conv.scrollTop = conv.scrollHeight;
+    toolIndicatorEl = div;
+  }
+
+  function removeToolIndicator() {
+    if (toolIndicatorEl) { toolIndicatorEl.remove(); toolIndicatorEl = null; }
+  }
+
+  function addToolHistoryEntry(toolName, summary) {
+    const div = document.createElement('div');
+    div.className = 'entry';
+    div.innerHTML = '<span class="name">' + toolName + '</span>: <span class="summary">' +
+      (summary || '(no result)').substring(0, 120) + '</span>';
+    toolHistoryList.prepend(div);
+  }
+
   function connect() {
     const ws = new WebSocket('ws://' + location.host + '/ws');
 
@@ -224,7 +304,14 @@ HTML = """<!DOCTYPE html>
         document.getElementById('meta-tts').textContent = 'tts: ' + msg.tts_url;
       } else if (msg.type === 'state') {
         setStatus(msg.state);
+      } else if (msg.type === 'tool_call') {
+        removeThinking();
+        showToolIndicator(msg.tool);
+      } else if (msg.type === 'tool_result') {
+        removeToolIndicator();
+        addToolHistoryEntry(msg.tool, msg.summary);
       } else if (msg.type === 'message') {
+        removeToolIndicator();
         if (msg.role === 'assistant') removeThinking();
         const el = addMessage(msg.role, msg.text);
         if (msg.role === 'user') showThinking(el);

@@ -18,6 +18,8 @@ dependencies = [
     "uvicorn>=0.34.0",
     "requests>=2.32.0",
     "torchaudio>=2.6.0",
+    "ddgs>=7.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
