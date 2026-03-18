@@ -43,7 +43,10 @@ class ToolRegistry:
             return ""
 
         lines = [
-            "You have access to the following tools. To use a tool, include a tool call block in your response:",
+            "IMPORTANT: You have access to tools. You MUST use them when the user asks for real-time information "
+            "(weather, news, current events, searches) or asks you to perform an action.",
+            "",
+            "To use a tool, your ENTIRE response must be ONLY the tool call block, nothing else:",
             "",
             '[TOOL_CALL]{"tool": "tool_name", "args": {"param": "value"}}[/TOOL_CALL]',
             "",
@@ -57,10 +60,13 @@ class ToolRegistry:
 
         lines.extend([
             "",
-            "You may chain multiple tool calls across responses. After each tool call, "
-            "you will receive the result and can decide to call another tool or provide "
-            "your final answer. When you have enough information, respond naturally "
-            "without any tool call blocks.",
+            "RULES:",
+            "- If the user asks about weather, news, current events, or anything you don't know: use web_search.",
+            "- If the user asks to run a command or open an app: use run_command.",
+            "- Do NOT make up answers for real-time information. Always use the tool first.",
+            "- After you use a tool, you will receive the result in a [TOOL_RESULT] block. "
+            "Then respond naturally using that information.",
+            "- You may chain multiple tool calls across responses.",
         ])
         return "\n".join(lines)
 

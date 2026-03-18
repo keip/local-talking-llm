@@ -128,12 +128,17 @@ class VoiceAssistant:
             else:
                 response_text = str(response).strip()
 
+            # Strip <think> blocks before parsing so reasoning doesn't false-match
+            response_for_parsing = re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
+
             # Check for a tool call
-            parsed = self.tool_registry.parse_tool_call(response_text)
+            parsed = self.tool_registry.parse_tool_call(response_for_parsing)
             if parsed is None:
+                self.console.print(f"[dim]LLM raw (no tool call): {response_text[:200]}[/dim]")
                 return self._clean_response(response_text)
 
             tool_name, tool_args = parsed
+            self.console.print(f"[magenta]Tool call detected: {tool_name}({tool_args})[/magenta]")
             tool = self.tool_registry.get(tool_name)
 
             if tool is None:
