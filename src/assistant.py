@@ -220,8 +220,24 @@ class VoiceAssistant:
             stream.stop()
             stream.close()
 
+    def handle_text_message(self, text: str) -> None:
+        """Handle a text message from the web UI (runs in a background thread)."""
+        self.console.print(f"[yellow]You (text): {text}")
+        web_ui.emit({"type": "state", "state": "processing"})
+        web_ui.emit({"type": "message", "role": "user", "text": text})
+
+        response = self.get_llm_response(text)
+        self.console.print(f"[cyan]Morgan: {response}")
+        web_ui.emit({"type": "message", "role": "assistant", "text": response})
+
+        self.console.print("[green]Speaking...")
+        web_ui.emit({"type": "state", "state": "speaking"})
+        self.stream_and_play_remote(response)
+        web_ui.emit({"type": "state", "state": "listening"})
+
     def run_manual_mode(self):
         """Press-Enter-to-record interaction loop."""
+        web_ui.set_message_handler(self.handle_text_message)
         web_ui.emit({"type": "state", "state": "listening"})
         while True:
             self.console.input(
@@ -270,6 +286,7 @@ class VoiceAssistant:
 
     def run_always_on_mode(self):
         """Always-on wake word mode with automatic end-of-speech detection."""
+        web_ui.set_message_handler(self.handle_text_message)
         detector = WakeWordDetector(stt_model=self.stt, wake_phrase=self.args.wake_phrase)
         vad = VoiceActivityDetector(silence_timeout=self.args.silence_timeout)
 

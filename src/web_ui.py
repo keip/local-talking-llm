@@ -9,6 +9,13 @@ from fastapi.responses import HTMLResponse
 app = FastAPI()
 event_queue: queue.Queue = queue.Queue()
 _connected: set[WebSocket] = set()
+_on_message = None
+
+
+def set_message_handler(handler) -> None:
+    """Register a callback for text messages from the web UI."""
+    global _on_message
+    _on_message = handler
 
 HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -178,6 +185,37 @@ HTML = """<!DOCTYPE html>
   }
   .tool-history .entry .name { color: #a78bfa; font-weight: 500; }
   .tool-history .entry .summary { color: #64748b; }
+  .input-bar {
+    padding: 12px 24px;
+    background: #1a1d27;
+    border-top: 1px solid #2d3148;
+    display: flex;
+    gap: 8px;
+  }
+  .input-bar input {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid #2d3148;
+    background: #0f1117;
+    color: #e2e8f0;
+    font-size: 14px;
+    outline: none;
+  }
+  .input-bar input:focus { border-color: #a5b4fc; }
+  .input-bar input:disabled { opacity: 0.5; }
+  .input-bar button {
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    background: #4f46e5;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .input-bar button:hover { background: #4338ca; }
+  .input-bar button:disabled { opacity: 0.5; cursor: default; }
 </style>
 </head>
 <body>
@@ -196,6 +234,10 @@ HTML = """<!DOCTYPE html>
 <div class="conversation" id="conversation">
   <div class="empty-state" id="empty-state">Waiting for conversation...</div>
 </div>
+<div class="input-bar">
+  <input type="text" id="text-input" placeholder="Type a message..." autocomplete="off">
+  <button id="send-btn">Send</button>
+</div>
 <div class="tool-history">
   <details>
     <summary>Tool History</summary>
@@ -208,6 +250,9 @@ HTML = """<!DOCTYPE html>
   const conv = document.getElementById('conversation');
   const empty = document.getElementById('empty-state');
   const toolHistoryList = document.getElementById('tool-history-list');
+  const textInput = document.getElementById('text-input');
+  const sendBtn = document.getElementById('send-btn');
+  let currentWs = null;
 
   const STATE_LABELS = {
     listening: 'Listening for wake phrase',
@@ -291,8 +336,23 @@ HTML = """<!DOCTYPE html>
     toolHistoryList.prepend(div);
   }
 
+  function sendMessage() {
+    const text = textInput.value.trim();
+    if (!text || !currentWs || currentWs.readyState !== WebSocket.OPEN) return;
+    currentWs.send(JSON.stringify({type: 'message', text: text}));
+    textInput.value = '';
+    textInput.disabled = true;
+    sendBtn.disabled = true;
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  textInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendMessage();
+  });
+
   function connect() {
     const ws = new WebSocket('ws://' + location.host + '/ws');
+    currentWs = ws;
 
     ws.onopen = () => setStatus('listening');
 
@@ -312,7 +372,12 @@ HTML = """<!DOCTYPE html>
         addToolHistoryEntry(msg.tool, msg.summary);
       } else if (msg.type === 'message') {
         removeToolIndicator();
-        if (msg.role === 'assistant') removeThinking();
+        if (msg.role === 'assistant') {
+          removeThinking();
+          textInput.disabled = false;
+          sendBtn.disabled = false;
+          textInput.focus();
+        }
         const el = addMessage(msg.role, msg.text);
         if (msg.role === 'user') showThinking(el);
       }
@@ -349,9 +414,14 @@ async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     _connected.add(ws)
     try:
-        # Keep the connection alive (client drives with onclose/onerror)
         while True:
-            await asyncio.sleep(3600)
+            data = await ws.receive_text()
+            msg = json.loads(data)
+            if msg.get("type") == "message" and _on_message:
+                text = msg.get("text", "").strip()
+                if text:
+                    loop = asyncio.get_running_loop()
+                    loop.run_in_executor(None, _on_message, text)
     except (WebSocketDisconnect, Exception):
         pass
     finally:
